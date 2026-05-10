@@ -1,0 +1,684 @@
+-- Dupe GUI by savalied37 (Rayfield) + Dropper (ALL IN ONE)
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+
+if not success or type(Rayfield) ~= "table" then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Failed to load Rayfield! Enable VPN.",
+        Duration = 10
+    })
+    return
+end
+
+local Window = Rayfield:CreateWindow({
+    Name = "dupe gui by savalied37",
+    LoadingTitle = "Dupe GUI",
+    LoadingSubtitle = "by savalied37",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "DupeGUI",
+        FileName = "Config"
+    },
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+-- =================== ПЕРЕМЕННЫЕ ===================
+local Backpack = LocalPlayer:WaitForChild("Backpack")
+local selectedItem = ""
+local dupeCount = 1
+local pickupCount = 5
+local backpackItems = {}
+
+local selectedPlayer = nil
+local selectedDropItem = nil
+
+local itemMap = {}
+local vaultMap = {}
+
+-- PICKUP ПЕРЕМЕННЫЕ
+local pickupEnabled = false
+local pickupDelay = 0.15
+local pickupDistance = 40
+
+-- INFINITE BRICKS ПЕРЕМЕННЫЕ
+local infiniteBricksEnabled = false
+local brickSpamCount = 100
+local brickName = "Brick"
+
+-- ССЫЛКИ НА UI ЭЛЕМЕНТЫ
+local ItemDropdown = nil
+local ItemDropdown2 = nil
+local VaultDropdown = nil
+local PlayerDropdown = nil
+
+-- =================== ФУНКЦИИ ДУПА ===================
+local function getClosestItem(maxDist)
+    local closest = nil
+    local closestDist = maxDist or 40
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local itemsFolder = workspace:FindFirstChild("Items")
+    if not itemsFolder then return nil end
+
+    for _, item in pairs(itemsFolder:GetChildren()) do
+        if item:IsA("Model") and item.PrimaryPart then
+            local dist = (hrp.Position - item.PrimaryPart.Position).Magnitude
+            if dist < closestDist then closest = item; closestDist = dist end
+        elseif item:IsA("BasePart") then
+            local dist = (hrp.Position - item.Position).Magnitude
+            if dist < closestDist then closest = item; closestDist = dist end
+        end
+    end
+    return closest
+end
+
+local function refreshBackpackList()
+    backpackItems = {}
+    for _, item in pairs(Backpack:GetChildren()) do
+        if item:IsA("Tool") then table.insert(backpackItems, item.Name) end
+    end
+    if #backpackItems == 0 then table.insert(backpackItems, "empty") end
+    return backpackItems
+end
+
+local function findItemModel(itemName)
+    local playerFolder = workspace:FindFirstChild("player")
+    if playerFolder then
+        local model = playerFolder:FindFirstChild(itemName)
+        if model and model:IsA("Model") then return model end
+    end
+    local playerModel = workspace:FindFirstChild(LocalPlayer.Name)
+    if playerModel then
+        local model = playerModel:FindFirstChild(itemName)
+        if model and model:IsA("Model") then return model end
+    end
+    local character = LocalPlayer.Character
+    if character then
+        for _, obj in pairs(character:GetChildren()) do
+            if obj:IsA("Model") and obj.Name == itemName then return obj end
+        end
+    end
+    return nil
+end
+
+local function findWeaponModel()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    for _, obj in pairs(character:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Weapon" then return obj end
+    end
+    return nil
+end
+
+local function startAutoPickup()
+    pickupEnabled = true
+    task.spawn(function()
+        while pickupEnabled do
+            local closestItem = getClosestItem(pickupDistance)
+            if closestItem then
+                local args = { [1] = "Pickup", [2] = closestItem }
+                pcall(function()
+                    ReplicatedStorage.Inventory:FireServer(unpack(args))
+                end)
+            end
+            task.wait(pickupDelay)
+        end
+    end)
+end
+
+local function stopAutoPickup()
+    pickupEnabled = false
+end
+
+local function doDupe(itemName, times, pickups)
+    local itemsFolder = workspace:FindFirstChild("Items")
+    if not itemsFolder then
+        itemsFolder = Instance.new("Folder")
+        itemsFolder.Name = "Items"
+        itemsFolder.Parent = workspace
+    end
+
+    local totalPickups = times * pickups
+    local successfulPickups = 0
+
+    startAutoPickup()
+    task.wait(0.5)
+
+    for i = 1, times do
+        Rayfield:Notify({ Title = "Dupe GUI", Content = "Cycle " .. i .. "/" .. times, Duration = 2 })
+        local tool = Backpack:FindFirstChild(itemName)
+        if not tool then
+            stopAutoPickup()
+            Rayfield:Notify({ Title = "Error", Content = "Tool '" .. itemName .. "' not found!", Duration = 3 })
+            return
+        end
+
+        local character = LocalPlayer.Character
+        if not character then 
+            stopAutoPickup()
+            return 
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid:EquipTool(tool) end
+        task.wait(0.3)
+
+        local equippedTool = character:FindFirstChildOfClass("Tool")
+        if equippedTool then equippedTool.Parent = Backpack end
+        task.wait(0.3)
+
+        local itemModel = findItemModel(itemName)
+        if itemModel then itemModel.Parent = itemsFolder; task.wait(0.2) end
+        local weaponModel = findWeaponModel()
+        if weaponModel then weaponModel.Parent = itemsFolder; task.wait(0.2) end
+        task.wait(0.3)
+
+        for p = 1, pickups do
+            task.wait(0.5)
+        end
+        
+        successfulPickups = successfulPickups + pickups
+        task.wait(0.5)
+    end
+
+    stopAutoPickup()
+    task.wait(1)
+
+    Rayfield:Notify({ Title = "Dupe GUI", Content = "Sending to Vault...", Duration = 3 })
+    local vaultSuccess = 0
+    for i = 1, totalPickups do
+        local safeItems = LocalPlayer:FindFirstChild("SafeItems")
+        if safeItems then
+            local vaultItem = safeItems:FindFirstChild(itemName)
+            if vaultItem then
+                ReplicatedStorage:WaitForChild("Vault"):FireServer("Vault", vaultItem)
+                vaultSuccess = vaultSuccess + 1
+                task.wait(0.2)
+            end
+        end
+    end
+    Rayfield:Notify({ Title = "Complete!", Content = "Pickup: " .. successfulPickups .. " | Vault: " .. vaultSuccess, Duration = 4 })
+end
+
+-- =================== ФУНКЦИИ INFINITE BRICKS ===================
+local function doInfiniteBricks(count)
+    local itemName = brickName
+    
+    Rayfield:Notify({ Title = "Infinite Bricks", Content = "Sending " .. count .. " packets...", Duration = 2 })
+    
+    task.spawn(function()
+        -- Проверяем наличие предмета
+        local item = Backpack:FindFirstChild(itemName) 
+            or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(itemName))
+        
+        if not item then
+            Rayfield:Notify({ Title = "Error", Content = itemName .. " not found!", Duration = 3 })
+            return
+        end
+        
+        -- Сохраняем камеру
+        local savedCFrame = workspace.CurrentCamera.CFrame
+        local remote = ReplicatedStorage:FindFirstChild("UseItem")
+        
+        if not remote then
+            Rayfield:Notify({ Title = "Error", Content = "UseItem remote not found!", Duration = 3 })
+            return
+        end
+        
+        -- СПАМ БЕЗ ПОТЕРИ
+        for i = 1, count do
+            task.spawn(function()
+                pcall(function()
+                    remote:FireServer(item, savedCFrame)
+                end)
+            end)
+        end
+        
+        task.wait(0.5)
+        Rayfield:Notify({ Title = "Done", Content = "Sent " .. count .. " packets!", Duration = 2 })
+    end)
+end
+
+-- =================== ФУНКЦИИ ДРОПЕРА ===================
+local function getPlayersList()
+    local playerNames = {}
+    for _, plr in pairs(Players:GetPlayers()) do
+        table.insert(playerNames, plr.Name)
+    end
+    if #playerNames == 0 then table.insert(playerNames, "no players") end
+    return playerNames
+end
+
+local function getPlayerItems(plr)
+    itemMap = {}
+    local itemNames = {"select item..."}
+    if not plr then return itemNames end
+    
+    local backpack = plr:FindFirstChild("Backpack")
+    local character = plr.Character
+    local count = {}
+    
+    if backpack then
+        for _, item in pairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                count[item.Name] = (count[item.Name] or 0) + 1
+                local displayName = item.Name .. " [#" .. count[item.Name] .. "]"
+                table.insert(itemNames, displayName)
+                itemMap[displayName] = item
+            end
+        end
+    end
+    
+    if character then
+        for _, item in pairs(character:GetChildren()) do
+            if item:IsA("Tool") then
+                count[item.Name] = (count[item.Name] or 0) + 1
+                local displayName = item.Name .. " [hand #" .. count[item.Name] .. "]"
+                table.insert(itemNames, displayName)
+                itemMap[displayName] = item
+            end
+        end
+    end
+    
+    if #itemNames == 1 then table.insert(itemNames, "empty") end
+    return itemNames
+end
+
+local function getVaultItems(plr)
+    vaultMap = {}
+    local itemNames = {"select item..."}
+    if not plr then return itemNames end
+    
+    local safeItems = plr:FindFirstChild("SafeItems")
+    local count = {}
+    
+    if safeItems then
+        for _, item in pairs(safeItems:GetChildren()) do
+            count[item.Name] = (count[item.Name] or 0) + 1
+            local displayName = item.Name .. " [#" .. count[item.Name] .. "]"
+            table.insert(itemNames, displayName)
+            vaultMap[displayName] = item
+        end
+    end
+    
+    if #itemNames == 1 then table.insert(itemNames, "empty") end
+    return itemNames
+end
+
+local function updateItemDropdown()
+    if selectedPlayer and ItemDropdown2 then
+        local itemNames = getPlayerItems(selectedPlayer)
+        ItemDropdown2:Refresh(itemNames, true)
+        pcall(function() ItemDropdown2:Set("select item...") end)
+        selectedDropItem = nil
+    end
+end
+
+local function updateVaultDropdown()
+    if selectedPlayer and VaultDropdown then
+        local itemNames = getVaultItems(selectedPlayer)
+        VaultDropdown:Refresh(itemNames, true)
+        pcall(function() VaultDropdown:Set("select item...") end)
+        selectedDropItem = nil
+    end
+end
+
+local function updateBackpackDropdown()
+    if ItemDropdown then
+        local list = refreshBackpackList()
+        ItemDropdown:Refresh(list, true)
+    end
+end
+
+local function updatePlayerDropdown()
+    if PlayerDropdown then
+        PlayerDropdown:Refresh(getPlayersList(), true)
+    end
+end
+
+-- =================== RAYFIELD UI - ВКЛАДКА 1: MAIN ===================
+local MainTab = Window:CreateTab("main", 4483362458)
+MainTab:CreateSection("settings")
+
+ItemDropdown = MainTab:CreateDropdown({
+    Name = "select item",
+    Options = refreshBackpackList(),
+    CurrentOption = {},
+    MultipleOptions = false,
+    Flag = "SelectedItem",
+    Callback = function(Option) selectedItem = Option[1] or Option end
+})
+
+MainTab:CreateSlider({
+    Name = "cycles",
+    Range = {1, 50},
+    Increment = 1,
+    Suffix = "x",
+    CurrentValue = 1,
+    Flag = "DupeCount",
+    Callback = function(Value) dupeCount = Value end
+})
+
+MainTab:CreateDropdown({
+    Name = "pickups per cycle",
+    Options = {"1", "5", "10", "15", "20"},
+    CurrentOption = {"5"},
+    MultipleOptions = false,
+    Flag = "PickupCount",
+    Callback = function(Option) pickupCount = tonumber(Option[1] or Option) or 5 end
+})
+
+MainTab:CreateSlider({
+    Name = "pickup delay (ms)",
+    Range = {50, 500},
+    Increment = 25,
+    Suffix = "ms",
+    CurrentValue = 150,
+    Flag = "PickupDelay",
+    Callback = function(Value) pickupDelay = Value / 1000 end
+})
+
+MainTab:CreateSlider({
+    Name = "pickup distance",
+    Range = {20, 100},
+    Increment = 5,
+    Suffix = "studs",
+    CurrentValue = 40,
+    Flag = "PickupDistance",
+    Callback = function(Value) pickupDistance = Value end
+})
+
+MainTab:CreateButton({
+    Name = "refresh backpack",
+    Callback = function()
+        updateBackpackDropdown()
+        Rayfield:Notify({ Title = "Refreshed", Content = "Backpack updated", Duration = 2 })
+    end
+})
+
+MainTab:CreateSection("actions")
+
+MainTab:CreateButton({
+    Name = "start dupe",
+    Callback = function()
+        if selectedItem == "" or selectedItem == "empty" then
+            Rayfield:Notify({ Title = "Error", Content = "Select an item!", Duration = 3 })
+            return
+        end
+        local total = dupeCount * pickupCount
+        Rayfield:Notify({ Title = "Starting", Content = selectedItem .. "\nCycles: " .. dupeCount .. " | Pickups: " .. pickupCount .. "\nTotal: " .. total, Duration = 4 })
+        task.spawn(function() doDupe(selectedItem, dupeCount, pickupCount) end)
+    end
+})
+
+MainTab:CreateButton({
+    Name = "vault (1x)",
+    Callback = function()
+        if selectedItem == "" or selectedItem == "empty" then return end
+        local safeItems = LocalPlayer:FindFirstChild("SafeItems")
+        if safeItems then
+            local vaultItem = safeItems:FindFirstChild(selectedItem)
+            if vaultItem then
+                ReplicatedStorage:WaitForChild("Vault"):FireServer("Vault", vaultItem)
+                Rayfield:Notify({ Title = "Vault", Content = "Sent: " .. selectedItem, Duration = 2 })
+            end
+        end
+    end
+})
+
+MainTab:CreateButton({
+    Name = "quick pickup x5",
+    Callback = function()
+        for i = 1, 5 do
+            local item = getClosestItem(pickupDistance)
+            if item then
+                local args = { [1] = "Pickup", [2] = item }
+                pcall(function()
+                    ReplicatedStorage.Inventory:FireServer(unpack(args))
+                end)
+                task.wait(pickupDelay)
+            end
+        end
+        Rayfield:Notify({ Title = "Pickup", Content = "Completed 5 Pickups", Duration = 2 })
+    end
+})
+
+-- =================== RAYFIELD UI - ВКЛАДКА 2: DROPPER ===================
+local DropperTab = Window:CreateTab("dropper", 4483362458)
+DropperTab:CreateSection("inventory items")
+
+PlayerDropdown = DropperTab:CreateDropdown({
+    Name = "select player",
+    Options = getPlayersList(),
+    CurrentOption = {},
+    MultipleOptions = false,
+    Flag = "SelectedPlayer",
+    Callback = function(Option)
+        local playerName = Option[1] or Option
+        if playerName ~= "no players" then
+            selectedPlayer = Players:FindFirstChild(playerName)
+            if selectedPlayer then
+                updateItemDropdown()
+                updateVaultDropdown()
+            end
+        end
+    end
+})
+
+ItemDropdown2 = DropperTab:CreateDropdown({
+    Name = "select item (inventory)",
+    Options = {"select player first"},
+    CurrentOption = {"select player first"},
+    MultipleOptions = false,
+    Flag = "SelectedDropItem",
+    Callback = function(Option)
+        local opt = Option[1] or Option
+        if opt == "select item..." or opt == "select player first" or opt == "empty" then
+            selectedDropItem = nil
+        else
+            selectedDropItem = itemMap[opt]
+        end
+    end
+})
+
+DropperTab:CreateSection("vault items")
+
+VaultDropdown = DropperTab:CreateDropdown({
+    Name = "select item (vault)",
+    Options = {"select player first"},
+    CurrentOption = {"select player first"},
+    MultipleOptions = false,
+    Flag = "SelectedVaultItem",
+    Callback = function(Option)
+        local opt = Option[1] or Option
+        if opt == "select item..." or opt == "select player first" or opt == "empty" then
+            selectedDropItem = nil
+        else
+            selectedDropItem = vaultMap[opt]
+        end
+    end
+})
+
+DropperTab:CreateSection("actions")
+
+DropperTab:CreateButton({
+    Name = "drop item",
+    Callback = function()
+        if selectedPlayer and selectedDropItem then
+            if selectedDropItem.Parent then
+                local inventoryRemote = ReplicatedStorage:FindFirstChild("Inventory")
+                if inventoryRemote then
+                    inventoryRemote:FireServer("Drop", selectedDropItem)
+                    Rayfield:Notify({ 
+                        Title = "Dropped", 
+                        Content = selectedDropItem.Name .. " from " .. selectedPlayer.Name, 
+                        Duration = 2 
+                    })
+                    task.wait(0.3)
+                    updateItemDropdown()
+                    updateVaultDropdown()
+                end
+            else
+                Rayfield:Notify({ Title = "Error", Content = "Item no longer exists!", Duration = 2 })
+                updateItemDropdown()
+                updateVaultDropdown()
+            end
+        else
+            Rayfield:Notify({ Title = "Error", Content = "Select player and item!", Duration = 2 })
+        end
+    end
+})
+
+DropperTab:CreateButton({
+    Name = "drop all items (inventory)",
+    Callback = function()
+        if not selectedPlayer then
+            Rayfield:Notify({ Title = "Error", Content = "Select a player!", Duration = 2 })
+            return
+        end
+        
+        local backpack = selectedPlayer:FindFirstChild("Backpack")
+        local count = 0
+        
+        if backpack then
+            local inventoryRemote = ReplicatedStorage:FindFirstChild("Inventory")
+            if inventoryRemote then
+                local itemsToDelete = {}
+                for _, item in pairs(backpack:GetChildren()) do
+                    if item:IsA("Tool") then table.insert(itemsToDelete, item) end
+                end
+                for _, item in pairs(itemsToDelete) do
+                    if item.Parent then
+                        inventoryRemote:FireServer("Drop", item)
+                        count = count + 1
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end
+        
+        Rayfield:Notify({ Title = "Dropped All", Content = "Dropped " .. count .. " items from " .. selectedPlayer.Name, Duration = 2 })
+        task.wait(0.3)
+        updateItemDropdown()
+        updateVaultDropdown()
+    end
+})
+
+DropperTab:CreateButton({
+    Name = "drop all items (vault)",
+    Callback = function()
+        if not selectedPlayer then
+            Rayfield:Notify({ Title = "Error", Content = "Select a player!", Duration = 2 })
+            return
+        end
+        
+        local safeItems = selectedPlayer:FindFirstChild("SafeItems")
+        local count = 0
+        
+        if safeItems then
+            local inventoryRemote = ReplicatedStorage:FindFirstChild("Inventory")
+            if inventoryRemote then
+                local itemsToDelete = {}
+                for _, item in pairs(safeItems:GetChildren()) do
+                    table.insert(itemsToDelete, item)
+                end
+                for _, item in pairs(itemsToDelete) do
+                    if item.Parent then
+                        inventoryRemote:FireServer("Drop", item)
+                        count = count + 1
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end
+        
+        Rayfield:Notify({ Title = "Dropped All", Content = "Dropped " .. count .. " vault items from " .. selectedPlayer.Name, Duration = 2 })
+        task.wait(0.3)
+        updateItemDropdown()
+        updateVaultDropdown()
+    end
+})
+
+DropperTab:CreateButton({
+    Name = "refresh players",
+    Callback = function()
+        updatePlayerDropdown()
+        Rayfield:Notify({ Title = "Refreshed", Content = "Player list updated", Duration = 2 })
+    end
+})
+
+-- =================== RAYFIELD UI - ВКЛАДКА 3: INFINITE BRICKS ===================
+local InfiniteTab = Window:CreateTab("infinite bricks", 4483362458)
+InfiniteTab:CreateSection("settings")
+
+InfiniteTab:CreateInput({
+    Name = "item name",
+    PlaceholderText = "Brick",
+    RemoveTextAfterFocusLost = false,
+    Flag = "BrickName",
+    Callback = function(Value)
+        brickName = Value
+        if brickName == "" then brickName = "Brick" end
+    end
+})
+
+InfiniteTab:CreateSlider({
+    Name = "spam count",
+    Range = {10, 10000},
+    Increment = 10,
+    Suffix = "x",
+    CurrentValue = 100,
+    Flag = "BrickCount",
+    Callback = function(Value) brickSpamCount = Value end
+})
+
+InfiniteTab:CreateSection("actions")
+
+InfiniteTab:CreateButton({
+    Name = "execute spam",
+    Callback = function()
+        if brickName == "" or brickName == "select item" then
+            Rayfield:Notify({ Title = "Error", Content = "Enter item name!", Duration = 3 })
+            return
+        end
+        doInfiniteBricks(brickSpamCount)
+    end
+})
+
+-- =================== АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ (ВСЕГДА ВКЛЮЧЕНО) ===================
+task.spawn(function()
+    while task.wait(1) do
+        updateBackpackDropdown()
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        updatePlayerDropdown()
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        if selectedPlayer then
+            updateItemDropdown()
+            updateVaultDropdown()
+        end
+    end
+end)
+
+-- Начальная инициализация
+task.spawn(function()
+    task.wait(1)
+    local list = refreshBackpackList()
+    if #list > 0 and list[1] ~= "empty" then selectedItem = list[1] end
+end)
+
+print("✅ Dupe GUI + Dropper + Infinite Bricks loaded successfully!")
