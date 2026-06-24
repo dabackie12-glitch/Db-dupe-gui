@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 local success, Rayfield = pcall(function()
-    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    return loadstring(game:HttpGet("https://sirius.menu"))()
 end)
 
 if not success or type(Rayfield) ~= "table" then
@@ -104,21 +104,16 @@ local function findWeaponModel()
     return nil
 end
 
+-- FUNCIÓN MODIFICADA PARA TRABAJAR DIRECTAMENTE POR RED (ESTILO MJOLNIR)
 local function doDupe(itemName, times, pickups)
-    local itemsFolder = workspace:FindFirstChild("Items")
-    if not itemsFolder then
-        itemsFolder = Instance.new("Folder")
-        itemsFolder.Name = "Items"
-        itemsFolder.Parent = workspace
-    end
-
     local totalPickups = times * pickups
     local successfulPickups = 0
 
     for i = 1, times do
         Rayfield:Notify({ Title = "Dupe GUI", Content = "Cycle " .. i .. "/" .. times, Duration = 2 })
 
-        local tool = Backpack:FindFirstChild(itemName)
+        -- Buscar el objeto directamente en el inventario o en SafeItems
+        local tool = Backpack:FindFirstChild(itemName) or (LocalPlayer:FindFirstChild("SafeItems") and LocalPlayer.SafeItems:FindFirstChild(itemName))
         if not tool then
             Rayfield:Notify({ Title = "Error", Content = "Tool '" .. itemName .. "' not found!", Duration = 3 })
             return
@@ -127,47 +122,44 @@ local function doDupe(itemName, times, pickups)
         local character = LocalPlayer.Character
         if not character then return end
 
+        -- Equipar y desequipar rápidamente para registrar el estado de red del objeto
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then humanoid:EquipTool(tool) end
-        task.wait(0.3)
+        task.wait(0.15)
 
         local equippedTool = character:FindFirstChildOfClass("Tool")
         if equippedTool then equippedTool.Parent = Backpack end
-        task.wait(0.3)
+        task.wait(0.15)
 
-        local itemModel = findItemModel(itemName)
-        if itemModel then itemModel.Parent = itemsFolder; task.wait(0.2) end
+        -- Envío inmediato de la orden de guardado a la bóveda
+        ReplicatedStorage:WaitForChild("Vault"):FireServer("Vault", tool)
+        task.wait(0.1)
 
-        local weaponModel = findWeaponModel()
-        if weaponModel then weaponModel.Parent = itemsFolder; task.wait(0.2) end
-
-        task.wait(0.3)
-
+        -- Ráfaga directa de "Pickup" a través de la red sin buscar objetos en el suelo
         for p = 1, pickups do
-            local closestItem = getClosestItem(40)
-            if closestItem then
-                local args = { [1] = "Pickup", [2] = closestItem }
+            task.spawn(function()
+                local args = { [1] = "Pickup", [2] = tool }
                 ReplicatedStorage.Inventory:FireServer(unpack(args))
-                successfulPickups = successfulPickups + 1
-                task.wait(0.2)
-            end
+            end)
+            successfulPickups = successfulPickups + 1
+            task.wait(0.05)
         end
-        task.wait(0.5)
+        task.wait(0.3)
     end
 
-    task.wait(1)
+    task.wait(0.5)
     Rayfield:Notify({ Title = "Dupe GUI", Content = "Sending to Vault...", Duration = 3 })
 
     local vaultSuccess = 0
-    for i = 1, totalPickups do
-        local safeItems = LocalPlayer:FindFirstChild("SafeItems")
-        if safeItems then
-            local vaultItem = safeItems:FindFirstChild(itemName)
-            if vaultItem then
-                local args = { "Vault", vaultItem }
+    -- Asegurar los remanentes clonados en la bóveda
+    local safeItems = LocalPlayer:FindFirstChild("SafeItems")
+    if safeItems then
+        for _, item in pairs(safeItems:GetChildren()) do
+            if item.Name == itemName then
+                local args = { "Vault", item }
                 ReplicatedStorage:WaitForChild("Vault"):FireServer(unpack(args))
                 vaultSuccess = vaultSuccess + 1
-                task.wait(0.2)
+                task.wait(0.1)
             end
         end
     end
@@ -236,7 +228,7 @@ MainTab:CreateButton({
         if selectedItem == "" or selectedItem == "Empty" then return end
         local safeItems = LocalPlayer:FindFirstChild("SafeItems")
         if safeItems then
-            local vaultItem = safeItems:FindFirstChild(selectedItem)
+            local vaultItem = safeItems:FindFirstChild(selectedItem) or Backpack:FindFirstChild(selectedItem)
             if vaultItem then
                 local args = { "Vault", vaultItem }
                 ReplicatedStorage:WaitForChild("Vault"):FireServer(unpack(args))
@@ -249,13 +241,13 @@ MainTab:CreateButton({
 MainTab:CreateButton({
     Name = "Quick Pickup x5",
     Callback = function()
+        local tool = Backpack:FindFirstChild(selectedItem) or (LocalPlayer:FindFirstChild("SafeItems") and LocalPlayer.SafeItems:FindFirstChild(selectedItem))
+        if not tool then return end
+        
         for i = 1, 5 do
-            local item = getClosestItem(40)
-            if item then
-                local args = { [1] = "Pickup", [2] = item }
-                ReplicatedStorage.Inventory:FireServer(unpack(args))
-                task.wait(0.15)
-            end
+            local args = { [1] = "Pickup", [2] = tool }
+            ReplicatedStorage.Inventory:FireServer(unpack(args))
+            task.wait(0.15)
         end
         Rayfield:Notify({ Title = "Pickup", Content = "Completed 5 Pickups", Duration = 2 })
     end
